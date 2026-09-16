@@ -258,6 +258,11 @@ export function registerSocketHandlers({ io, rooms, hostTokens, config, getWordl
       game.vote(socket.data.playerId, v.id(payload.definitionId, 'definitionId'), now);
     });
 
+    on('player:favorite', { role: 'player' }, (payload, game, now) => {
+      const definitionId = payload.definitionId === null ? null : v.id(payload.definitionId, 'definitionId');
+      game.voteFavorite(socket.data.playerId, definitionId, now);
+    });
+
     on('player:leave', { role: 'player' }, (_, game, now) => {
       const playerId = socket.data.playerId;
       detach(socket);
@@ -411,6 +416,20 @@ export function registerSocketHandlers({ io, rooms, hostTokens, config, getWordl
       if (action === 'pause' && !game.pauseTimer('host', now)) throw new GameError('noTimer');
       if (action === 'resume' && !game.resumeTimer(now)) throw new GameError('noTimer');
       if (action === 'end') game.endPhaseNow(now);
+    });
+
+    host('host:setNextRound', (payload, game, now) => {
+      const update = {};
+      if (payload.modifiers !== undefined) update.modifiers = v.idList(payload.modifiers, { max: 10, name: 'modifiers' });
+      if (payload.wheel !== undefined) update.wheel = v.bool(payload.wheel, 'wheel');
+      game.setNextRound(update, now);
+    });
+
+    host('host:nextWord', (payload, game, now) => {
+      const action = v.oneOf(payload.action, ['draw', 'choose', 'random'], 'action');
+      if (action === 'draw') game.drawNextWord(now);
+      if (action === 'choose') game.chooseNextWord(v.str(payload.term, { min: 1, max: 80, name: 'term' }), now);
+      if (action === 'random') game.chooseNextWord(null, now);
     });
 
     host('host:skipWord', (_, game, now) => {

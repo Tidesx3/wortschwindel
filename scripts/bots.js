@@ -29,7 +29,8 @@ const DEFINITIONS = [
   'Stilmittel, bei dem Wörter vertauscht werden',
 ];
 
-const SECRET_KEYS = ['"authorIds"', '"authors"', '"isReal"', '"sourceId"', '"voters"', '"realDefinition"', '"definitions"'];
+const SECRET_KEYS = ['"authorIds"', '"authors"', '"isReal"', '"sourceId"', '"voters"', '"realDefinition"', '"definitions"', '"nextRound"', '"availableTerms"', '"catchupIds"'];
+let plannedTerm = null;
 let failures = 0;
 
 function parseArgs(list) {
@@ -61,8 +62,13 @@ function emit(socket, event, payload = {}) {
 function checkLeaks(name, view) {
   if (!spy) return;
   // Secrets may only appear once the reveal starts (and then only step by step).
-  if (['REVEAL', 'SCOREBOARD', 'GAME_OVER'].includes(view.phase)) return;
   const json = JSON.stringify(view);
+  // The host's next-word preview must never reach players, in any phase.
+  if (plannedTerm && (view.phase === 'LOBBY' || view.phase === 'SCOREBOARD') && json.includes(plannedTerm)) {
+    failures++;
+    console.error(`✖ LEAK: ${name} erhielt das vorab gewählte Wort in Phase ${view.phase}`);
+  }
+  if (['REVEAL', 'SCOREBOARD', 'GAME_OVER'].includes(view.phase)) return;
   for (const key of SECRET_KEYS) {
     if (json.includes(key)) {
       failures++;
@@ -149,6 +155,14 @@ class Bot {
       }
       const result = await emit(this.socket, 'player:vote', { definitionId: pick(options).id });
       if (!result.ok && result.error !== 'wrongPhase') console.error(`${this.name}: vote ${result.error}`);
+      if (view.ballot.favoriteEnabled) {
+        await sleep(random(100, 600));
+        const fav = await emit(this.socket, 'player:favorite', { definitionId: pick(options).id });
+        if (!fav.ok && fav.error !== 'wrongPhase') {
+          failures++;
+          console.error(`✖ ${this.name}: favorite ${fav.error}`);
+        }
+      }
     }
     if (view.phase === 'REVEAL' && view.reveal.done && you.roundResult && this.handledKey !== `result:${view.roundNumber}`) {
       this.handledKey = `result:${view.roundNumber}`;
@@ -191,12 +205,50 @@ async function driveGame(host, bots) {
     }
   };
 
+  // Round plan exercising the modifiers: 1 = chosen word + double/truth, 2 = favourite + catch-up + bluffer, 3 = wheel.
+  const plans = [
+    { modifiers: ['double', 'truth'], word: true },
+    { modifiers: ['favorite', 'catchup', 'bluffer'] },
+    { wheel: true },
+  ];
+  const prepare = async (roundNumber) => {
+    const plan = plans[(roundNumber - 1) % plans.length];
+    if (plan.modifiers) await act('host:setNextRound', { modifiers: plan.modifiers, wheel: false });
+    if (plan.wheel) await act('host:setNextRound', { wheel: true });
+    plannedTerm = null;
+    if (plan.word) {
+      await act('host:nextWord', { action: 'draw' });
+      await waitFor((v) => v.host.nextRound?.word, 'Wortvorschau', 5000);
+      plannedTerm = host.view.host.nextRound.word.term;
+      log(`Host: Runde ${roundNumber} vorbereitet mit Wort „${plannedTerm}“`);
+    }
+    await sleep(400); // let the leak check see the prepared state
+    return plan;
+  };
+  const checkRound = (plan, roundNumber) => {
+    const mods = host.view.modifiers?.list ?? [];
+    const ok = plan.wheel ? mods.length === 1 && host.view.modifiers.wheel : JSON.stringify(mods) === JSON.stringify(plan.modifiers);
+    if (!ok) {
+      failures++;
+      console.error(`✖ Runde ${roundNumber}: falsche Modifikatoren ${JSON.stringify(host.view.modifiers)}`);
+    }
+    if (plan.word && host.view.word?.term !== plannedTerm) {
+      failures++;
+      console.error(`✖ Runde ${roundNumber}: gewähltes Wort nicht verwendet (${host.view.word?.term})`);
+    }
+    log(`Host: Runde ${roundNumber} läuft mit ${mods.join(', ') || 'ohne Modifikatoren'}${plan.wheel ? ' (Glücksrad)' : ''}`);
+    // The planned word is public now.
+    plannedTerm = null;
+  };
+
   await waitFor((v) => v?.players.length === bots.length, 'alle Bots in der Lobby');
+  let plan = await prepare(1);
   log(`Host: ${bots.length} Spieler in der Lobby, starte Spiel`);
   await act('host:startGame');
 
   let reconnectTested = false;
   await waitFor((v) => v.phase === 'WRITING', 'Schreibphase');
+  checkRound(plan, 1);
   while (true) {
     await waitFor((v) => v.phase !== 'WRITING', 'Ende der Schreibphase');
     if (host.view.phase === 'GAME_OVER') break;
@@ -246,9 +298,11 @@ async function driveGame(host, bots) {
     await act('host:next');
     await waitFor((v) => v.phase === 'SCOREBOARD', 'Punktestand');
     log(`Host: Punktestand nach Runde ${round}: ${host.view.ranking.map((r) => `${r.name}=${r.score}`).join(', ')}`);
+    if (!host.view.isLastRound) plan = await prepare(round + 1);
     await act('host:next');
     await waitFor((v) => v.phase === 'WRITING' || v.phase === 'GAME_OVER', 'nächste Runde');
     if (host.view.phase === 'GAME_OVER') break;
+    checkRound(plan, round + 1);
   }
   const view = host.view;
   log('Spielende! Statistik:', JSON.stringify(view.stats));

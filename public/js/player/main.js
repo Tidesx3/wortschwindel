@@ -1,4 +1,4 @@
-import { $, add, h, replace, vibrate } from '../lib/dom.js';
+import { $, add, h, replace, svg, vibrate } from '../lib/dom.js';
 import { createConnection } from '../lib/socket.js';
 import { createTimer } from '../lib/timer.js';
 import { storage } from '../lib/storage.js';
@@ -218,6 +218,7 @@ function handleState(view) {
     if (local.lastPhase) vibrate(80);
     local.editing = false;
     local.pendingVote = null;
+    local.pendingFavorite = undefined;
     local.lastPhase = stepId;
   }
   hostAwayBanner(view);
@@ -266,6 +267,8 @@ function phaseKey(view) {
         view.ballot.votingOpen,
         you.ownEntryId,
         you.vote,
+        you.favorite,
+        view.ballot.favoriteEnabled,
         view.highlight,
         Boolean(view.timer?.expired),
       ]);
@@ -301,6 +304,24 @@ function wordHeader(view) {
   );
 }
 
+function modifierRow(view) {
+  const list = view.modifiers?.list ?? [];
+  if (!list.length) return null;
+  return h(
+    'div',
+    { class: 'p-modifiers' },
+    h(
+      'div',
+      { class: 'p-modifier-chips' },
+      list.map((id) => {
+        const mod = t.modifiers[id];
+        return mod && h('span', { class: `p-modifier mod-${id}`, title: mod.desc }, mod.icon, ' ', mod.name);
+      }),
+    ),
+    view.you.catchup && h('p', { class: 'notice notice-success small' }, P.catchupNote),
+  );
+}
+
 function waitingScreen(el, title, sub) {
   add(el, h('section', { class: 'card center-card' }, h('div', { class: 'spinner' }), h('h2', {}, title), sub && h('p', { class: 'muted' }, sub)));
 }
@@ -333,7 +354,7 @@ const PHASES = {
     const draftKey = `draft:${view.code}:${view.roundNumber}:${view.word.term}`;
     const editing = !you.submitted || local.editing;
 
-    add(el, h('p', { class: 'p-kicker' }, P.writeTitle), wordHeader(view), writingTimer.el);
+    add(el, h('p', { class: 'p-kicker' }, P.writeTitle), wordHeader(view), modifierRow(view), writingTimer.el);
 
     if (!editing) {
       add(el, 
@@ -466,16 +487,18 @@ const PHASES = {
     const open = ballot.votingOpen;
     const expired = Boolean(view.timer?.expired);
     const selected = local.pendingVote ?? you.vote;
+    const favoriteEnabled = ballot.favoriteEnabled;
+    const favorite = local.pendingFavorite !== undefined ? local.pendingFavorite : you.favorite;
 
-    add(el, wordHeader(view));
+    add(el, wordHeader(view), modifierRow(view));
     if (open) {
-      add(el, votingTimer.el);
-      add(el, 
-        h(
-          'p',
-          { class: ['vote-status', you.vote ? 'notice notice-success' : 'notice'], role: 'status' },
-          you.vote ? P.voted : you.canVote ? P.voteNow : P.cannotVote,
-        ),
+      const complete = you.vote && (!favoriteEnabled || favorite);
+      const status = !you.canVote ? P.cannotVote : complete ? P.voted : you.vote ? P.votedWaitingFavorite : P.voteNow;
+      add(
+        el,
+        votingTimer.el,
+        h('p', { class: ['vote-status', complete ? 'notice notice-success' : 'notice'], role: 'status' }, status),
+        favoriteEnabled && you.canVote && h('p', { class: 'muted small center' }, favorite ? P.favoriteChosen : P.favoritePrompt),
       );
     } else {
       add(el, h('p', { class: 'notice' }, P.presenting, ' ', P.presentingCount(ballot.presentedCount, ballot.total)));
@@ -498,9 +521,36 @@ const PHASES = {
         h('span', { class: 'vote-number' }, entry.number),
         h('span', { class: 'vote-text' }, entry.text),
         own && h('span', { class: 'own-label' }, P.ownAnswer),
-        isSelected && h('span', { class: 'vote-check', 'aria-hidden': 'true' }, '✓'),
+        isSelected &&
+          h(
+            'span',
+            { class: 'vote-check', 'aria-hidden': 'true' },
+            svg(
+              'svg',
+              { viewBox: '0 0 24 24', class: 'check-icon' },
+              svg('path', { d: 'M5.5 12.5l4.2 4.2L18.5 7.8', fill: 'none', stroke: 'currentColor', 'stroke-width': 3.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }),
+            ),
+          ),
       );
-      list.append(h('li', {}, card));
+      const isFavorite = entry.id === favorite;
+      const star =
+        favoriteEnabled &&
+        open &&
+        !own &&
+        h(
+          'button',
+          {
+            type: 'button',
+            class: ['favorite-button', isFavorite && 'active'],
+            disabled: expired,
+            'aria-pressed': String(isFavorite),
+            'aria-label': isFavorite ? P.favoriteRemove : P.favoriteButton,
+            title: isFavorite ? P.favoriteRemove : P.favoriteButton,
+            onclick: () => voteFavorite(isFavorite ? null : entry.id),
+          },
+          isFavorite ? '★' : '☆',
+        );
+      list.append(h('li', { class: ['vote-item', star && 'has-favorite'] }, card, star));
     }
     add(el, list);
     if (open && you.vote) add(el, h('p', { class: 'muted center' }, P.voteChange));
@@ -513,7 +563,6 @@ const PHASES = {
   REVEAL(el, view) {
     const you = view.you;
     const result = you.roundResult;
-    const points = view.settings.points;
     if (!view.reveal.done || !result) {
       add(el, 
         h(
@@ -528,14 +577,16 @@ const PHASES = {
     }
     const lines = [];
     if (!result.voted) lines.push(h('p', { class: 'result-line' }, P.resultNoVote));
-    else if (result.votedReal) lines.push(h('p', { class: 'result-line good' }, '✓ ', P.resultCorrect(points.correctVote)));
+    else if (result.votedReal) lines.push(h('p', { class: 'result-line good' }, '✓ ', P.resultCorrect(result.correctPoints)));
     else lines.push(h('p', { class: 'result-line bad' }, '✗ ', P.resultWrong));
-    if (result.markedCorrect) lines.push(h('p', { class: 'result-line good' }, '★ ', P.resultMarkedCorrect(points.markedCorrect)));
+    if (result.markedCorrect) lines.push(h('p', { class: 'result-line good' }, '★ ', P.resultMarkedCorrect(result.markedPoints)));
     if (result.fooledCount > 0) {
-      lines.push(h('p', { class: 'result-line good' }, '🎭 ', P.resultFooled(result.fooledCount, result.fooledCount * points.perFooled)));
+      lines.push(h('p', { class: 'result-line good' }, '🎭 ', P.resultFooledPoints(result.fooledCount, result.fooledPoints)));
     } else if (result.hadEntry && !result.markedCorrect) {
       lines.push(h('p', { class: 'result-line muted' }, P.resultNobodyFooled));
     }
+    if (result.favoritePoints > 0) lines.push(h('p', { class: 'result-line good' }, '⭐ ', P.resultFavorite(result.favoritePoints)));
+    if (view.modifiers?.list.length) lines.push(modifierRow(view));
     add(el, 
       h(
         'section',
@@ -594,6 +645,21 @@ function scheduleDraftSync(text) {
     local.lastSentDraft = text;
     connection.emit('player:draft', { text: text.slice(0, 400) });
   }, 700);
+}
+
+async function voteFavorite(entryId) {
+  const previous = local.pendingFavorite;
+  local.pendingFavorite = entryId;
+  local.renderKey = null;
+  handleState(local.view);
+  vibrate(30);
+  const result = await connection.emit('player:favorite', { definitionId: entryId });
+  if (!result.ok) {
+    toast(errorText(result.error), { type: 'error' });
+    local.pendingFavorite = previous;
+    local.renderKey = null;
+    if (local.view) handleState(local.view);
+  }
 }
 
 async function vote(entryId) {

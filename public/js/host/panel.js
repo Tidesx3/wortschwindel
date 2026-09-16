@@ -35,6 +35,12 @@ export function createPanel(root, { act, getView, onNext }) {
   });
 
   const TABS = {
+    prep: {
+      label: () => `🎛 ${H.tabs.prep}`,
+      visible: (view) => Boolean(view.host.nextRound),
+      key: (view) => JSON.stringify([view.host.nextRound, local.showSecrets, view.roundNumber]),
+      render: renderPrep,
+    },
     players: {
       label: () => `${H.tabs.players} (${getView()?.players.length ?? 0})`,
       visible: () => true,
@@ -76,6 +82,7 @@ export function createPanel(root, { act, getView, onNext }) {
     }
     if (view.phase !== local.lastPhase) {
       if (view.phase === 'MODERATION') local.tab = 'moderation';
+      else if (view.phase === 'SCOREBOARD' && TABS.prep.visible(view)) local.tab = 'prep';
       else if (!TABS[local.tab].visible(view)) local.tab = 'players';
       local.lastPhase = view.phase;
     }
@@ -122,6 +129,107 @@ export function createPanel(root, { act, getView, onNext }) {
 
   function rerender() {
     render(getView(), true);
+  }
+
+  // ------------------------------------------------------------ next round preparation
+
+  function renderPrep(container, view) {
+    const P = H.prep;
+    const prep = view.host.nextRound;
+    const selected = new Set(prep.modifiers);
+    const setModifiers = (next) => act('host:setNextRound', { modifiers: [...next] });
+
+    const modifierList = h(
+      'div',
+      { class: ['modifier-grid', prep.wheel && 'disabled'] },
+      Object.keys(t.modifiers)
+        .filter((id) => id !== 'wheel')
+        .map((id) => {
+          const mod = t.modifiers[id];
+          const active = selected.has(id);
+          return h(
+            'button',
+            {
+              type: 'button',
+              class: ['modifier-card', active && 'active'],
+              'aria-pressed': String(active),
+              disabled: prep.wheel,
+              onclick: () => {
+                const next = new Set(selected);
+                if (active) next.delete(id);
+                else next.add(id);
+                setModifiers(next);
+              },
+            },
+            h('span', { class: 'modifier-icon', 'aria-hidden': 'true' }, mod.icon),
+            h('span', { class: 'modifier-text' }, h('strong', {}, mod.name), h('small', {}, mod.desc)),
+          );
+        }),
+    );
+
+    const wheel = t.modifiers.wheel;
+    const word = prep.word;
+    const select = h(
+      'select',
+      {
+        class: 'input',
+        'aria-label': P.chooseLabel,
+        onchange: (event) => {
+          if (event.target.value) act('host:nextWord', { action: 'choose', term: event.target.value });
+        },
+      },
+      h('option', { value: '' }, P.choose),
+      prep.availableTerms.map((term) => h('option', { value: term, selected: word?.term === term }, term)),
+    );
+
+    add(
+      container,
+      h('h3', {}, P.title(prep.roundNumber)),
+      h('p', { class: 'muted small' }, P.modifiersHint),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: ['modifier-card wheel-card', prep.wheel && 'active'],
+          'aria-pressed': String(prep.wheel),
+          onclick: () => act('host:setNextRound', { wheel: !prep.wheel }),
+        },
+        h('span', { class: 'modifier-icon', 'aria-hidden': 'true' }, wheel.icon),
+        h('span', { class: 'modifier-text' }, h('strong', {}, P.wheelLabel), h('small', {}, prep.wheel ? P.wheelActive : wheel.desc)),
+      ),
+      modifierList,
+      selected.has('catchup') && prep.roundNumber === 1 && h('p', { class: 'notice small' }, P.catchupFirstRound),
+      h('h3', {}, P.wordTitle),
+      secretToggle(),
+      secretBox(
+        word
+          ? h(
+              'div',
+              { class: 'real-definition' },
+              h('strong', {}, [word.article, word.term].filter(Boolean).join(' ')),
+              word.category && h('span', { class: 'chip small', style: { marginLeft: '0.5em' } }, word.category),
+              h('div', {}, word.definition),
+            )
+          : h('p', { class: 'muted' }, P.wordRandom),
+        h(
+          'div',
+          { class: 'panel-row' },
+          h('button', { class: 'btn btn-small', type: 'button', onclick: () => act('host:nextWord', { action: 'draw' }) }, word ? P.redraw : P.draw),
+          word && h('button', { class: 'btn btn-small btn-ghost', type: 'button', onclick: () => act('host:nextWord', { action: 'random' }) }, P.random),
+        ),
+        select,
+        h('p', { class: 'muted small' }, P.available(prep.availableTerms.length)),
+      ),
+      h(
+        'div',
+        { class: 'panel-footer' },
+        h(
+          'button',
+          { class: 'btn btn-primary btn-block', type: 'button', onclick: () => onNext() },
+          `${view.phase === 'LOBBY' ? H.next.LOBBY : H.next.SCOREBOARD} →`,
+        ),
+      ),
+    );
   }
 
   // ------------------------------------------------------------ players

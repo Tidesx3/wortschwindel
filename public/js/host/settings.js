@@ -92,7 +92,16 @@ export function renderSettings(container, view, { act }) {
   const remainingRounds = settings.rounds - (editable ? 0 : view.roundNumber);
   const warning = info.unused < remainingRounds;
 
-  add(container, 
+  const screenUrl = `${location.origin}/screen/${encodeURIComponent(view.code)}?token=${encodeURIComponent(view.host.screenToken)}`;
+
+  add(container,
+    h(
+      'label',
+      { class: 'field' },
+      h('span', {}, S.screenLink),
+      h('input', { class: 'input screen-link', readonly: true, value: screenUrl, onfocus: (event) => event.target.select() }),
+      h('small', { class: 'muted' }, S.screenLinkHint),
+    ),
     !editable && h('p', { class: 'notice small' }, S.inGameNote),
     h('h3', {}, t.host.tabs.settings),
     number('rounds', S.rounds, { min: 1, max: 50 }),
@@ -168,6 +177,7 @@ export function renderSettings(container, view, { act }) {
     pointsField('correctVote', S.pointsCorrect),
     pointsField('perFooled', S.pointsFooled),
     pointsField('markedCorrect', S.pointsMarked),
+    pointsField('favorite', S.pointsFavorite),
     view.host.devShortTimers && h('p', { class: 'notice notice-warning small' }, 'DEV_SHORT_TIMERS aktiv'),
   );
 }

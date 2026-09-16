@@ -1,5 +1,14 @@
 import { rankPlayers } from './Game.js';
 
+const MODIFIER_NAMES = {
+  double: 'Doppelte Punkte',
+  truth: 'Wahrheitsbonus',
+  bluffer: 'Meisterschwindler',
+  favorite: 'Publikumsliebling',
+  catchup: 'Aufholjagd',
+  blitz: 'Blitzrunde',
+};
+
 function cell(value) {
   const text = String(value ?? '');
   // Neutralise spreadsheet formula injection.
@@ -26,12 +35,20 @@ export function exportGameCsv(game, now = Date.now()) {
   }
   for (const round of game.history) {
     lines.push('');
-    lines.push(row([`Runde ${round.number}`, [round.article, round.term].filter(Boolean).join(' ')]));
-    lines.push(row(['Definition', 'Echt', 'Autor(en)', 'Stimmen', 'Abgestimmt haben', 'Status']));
+    lines.push(
+      row([
+        `Runde ${round.number}`,
+        [round.article, round.term].filter(Boolean).join(' '),
+        round.modifiers?.length ? `Modifikatoren: ${round.modifiers.map((id) => MODIFIER_NAMES[id] ?? id).join(', ')}` : '',
+      ]),
+    );
+    lines.push(row(['Definition', 'Echt', 'Autor(en)', 'Stimmen', 'Abgestimmt haben', 'Status', 'Publikumsliebling-Stimmen']));
     const sorted = [...round.definitions].sort((a, b) => Number(b.isReal) - Number(a.isReal) || b.votes - a.votes);
     for (const d of sorted) {
       const status = d.deleted ? 'gelöscht' : d.markedCorrect ? 'als richtig gewertet' : '';
-      lines.push(row([d.text, d.isReal ? 'ja' : 'nein', d.authors.join(', '), d.votes, d.voters.join(', '), status]));
+      lines.push(
+        row([d.text, d.isReal ? 'ja' : 'nein', d.authors.join(', '), d.votes, d.voters.join(', '), status, round.modifiers?.includes('favorite') ? d.favoriteVotes ?? 0 : '']),
+      );
     }
   }
   return '﻿' + lines.join('\r\n') + '\r\n';

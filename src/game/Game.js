@@ -5,6 +5,7 @@ import { validateMembers, validateName } from './names.js';
 import { filterWords, pickWord } from './wordlists.js';
 import { isVotable, scoreRound } from './scoring.js';
 import { randomId, shuffle, uuid } from './random.js';
+import { BLITZ_SECONDS, sanitizeModifiers, spinWheel } from './modifiers.js';
 
 export const DISCONNECT_GRACE_MS = 30_000;
 export const MAX_DRAFT_LENGTH = 400;
@@ -13,6 +14,10 @@ const { LOBBY, WRITING, MODERATION, VOTING, REVEAL, SCOREBOARD, GAME_OVER } = PH
 
 function fail(code) {
   throw new GameError(code);
+}
+
+function emptyNextRound() {
+  return { modifiers: [], wheel: false, term: null };
 }
 
 /**
@@ -58,6 +63,7 @@ export class Game {
     this.playedTerms = new Set();
     this.history = [];
     this.lastScoreChanges = {};
+    this.nextRound = emptyNextRound();
     this.version = 0;
   }
 
@@ -315,6 +321,7 @@ export class Game {
       this.round.submissions.delete(playerId);
       this.round.drafts.delete(playerId);
       delete this.round.votes[playerId];
+      delete this.round.favorites?.[playerId];
       if (this.round.definitions) {
         for (const definition of this.round.definitions) {
           definition.authorIds = definition.authorIds.filter((id) => id !== playerId);
@@ -384,16 +391,95 @@ export class Game {
     this.startRound(now);
   }
 
+  // ---------------------------------------------------------------- round preparation
+
+  /** Whether the host may prepare the upcoming round right now. */
+  canPrepareRound() {
+    return this.phase === LOBBY || (this.phase === SCOREBOARD && !this.isLastRound());
+  }
+
+  setNextRound({ modifiers, wheel } = {}, now) {
+    if (!this.canPrepareRound()) fail('wrongPhase');
+    if (modifiers !== undefined) this.nextRound.modifiers = sanitizeModifiers(modifiers);
+    if (wheel !== undefined) this.nextRound.wheel = Boolean(wheel);
+    this.touch(now);
+  }
+
+  /** Unused words the host may pick for the next round. */
+  availableWords() {
+    return this.wordPool().filter((word) => !this.usedTerms.has(word.term));
+  }
+
+  nextCandidate() {
+    const term = this.nextRound.term;
+    if (!term) return null;
+    return this.availableWords().find((word) => word.term === term) ?? null;
+  }
+
+  /** Draws a (different) random word as preview for the next round. */
+  drawNextWord(now) {
+    if (!this.canPrepareRound()) fail('wrongPhase');
+    const exclude = new Set(this.usedTerms);
+    if (this.nextRound.term && this.availableWords().length > 1) exclude.add(this.nextRound.term);
+    const word = pickWord(this.wordPool(), exclude, this.playedTerms, this.random);
+    if (!word) fail('noWordsLeft');
+    this.nextRound.term = word.term;
+    this.touch(now);
+  }
+
+  chooseNextWord(term, now) {
+    if (!this.canPrepareRound()) fail('wrongPhase');
+    if (term === null) {
+      this.nextRound.term = null;
+    } else {
+      if (!this.availableWords().some((word) => word.term === term)) fail('wordNotAvailable');
+      this.nextRound.term = term;
+    }
+    this.touch(now);
+  }
+
+  /**
+   * "Aufholjagd": everyone below the median score. If ties leave nobody below the
+   * median (e.g. 4-0-0-0-0), everyone behind the leader(s) qualifies instead.
+   */
+  catchupPlayerIds(participants) {
+    if (participants.length < 2) return [];
+    const scores = participants.map((p) => p.score).sort((a, b) => a - b);
+    const mid = Math.floor(scores.length / 2);
+    const median = scores.length % 2 ? scores[mid] : (scores[mid - 1] + scores[mid]) / 2;
+    const top = scores.at(-1);
+    let lower = participants.filter((p) => p.score < median);
+    if (!lower.length) lower = participants.filter((p) => p.score < top);
+    return lower.map((p) => p.id);
+  }
+
   startRound(now, { sameNumber = false } = {}) {
-    const word = pickWord(this.wordPool(), this.usedTerms, this.playedTerms, this.random);
+    const planned = sameNumber ? null : this.nextCandidate();
+    const word = planned ?? pickWord(this.wordPool(), this.usedTerms, this.playedTerms, this.random);
     if (!word) fail('noWordsLeft');
     assertTransition(this.phase, WRITING);
     this.usedTerms.add(word.term);
     this.playedTerms.add(word.term);
+    let modifiers;
+    let wheel;
+    if (sameNumber && this.round) {
+      // A skipped word keeps the round's modifiers.
+      modifiers = this.round.modifiers;
+      wheel = this.round.wheel;
+    } else {
+      wheel = this.nextRound.wheel;
+      modifiers = wheel ? [spinWheel(this.random)] : [...this.nextRound.modifiers];
+      this.nextRound = emptyNextRound();
+    }
     if (!sameNumber) this.roundNumber += 1;
     this.phase = WRITING;
+    const participants = [...this.players.values()].filter((p) => p.activeFromRound <= this.roundNumber);
     this.round = {
       number: this.roundNumber,
+      modifiers,
+      wheel,
+      catchupIds: modifiers.includes('catchup') ? this.catchupPlayerIds(participants) : [],
+      favorites: {},
       word: {
         term: word.term,
         article: word.article ?? null,
@@ -415,7 +501,7 @@ export class Game {
       revealStep: 0,
       scoresApplied: false,
     };
-    this.startTimer(this.settings.writingSeconds, now);
+    this.startTimer(modifiers.includes('blitz') ? BLITZ_SECONDS : this.settings.writingSeconds, now);
     this.touch(now);
   }
 
@@ -454,7 +540,13 @@ export class Game {
 
   allVoted(now) {
     const waiting = this.waitingParticipants(now);
-    return waiting.length > 0 && waiting.every((p) => this.round.votes[p.id] || !this.canVote(p.id));
+    const needsFavorite = this.round.modifiers.includes('favorite');
+    return (
+      waiting.length > 0 &&
+      waiting.every(
+        (p) => !this.canVote(p.id) || (this.round.votes[p.id] && (!needsFavorite || this.round.favorites[p.id])),
+      )
+    );
   }
 
   /** Whether a player has at least one ballot entry that is not their own. */
@@ -714,6 +806,26 @@ export class Game {
     this.checkAutoAdvance(now);
   }
 
+  /** "Publikumsliebling": an extra vote for the funniest entry (null removes it). */
+  voteFavorite(playerId, ballotId, now) {
+    if (this.phase !== VOTING) fail('wrongPhase');
+    const round = this.round;
+    if (!round.modifiers.includes('favorite')) fail('noFavoriteRound');
+    if (!round.votingOpen) fail('votingNotOpen');
+    if (this.timer?.expired) fail('timeUp');
+    if (!this.isParticipant(playerId)) fail('notParticipant');
+    if (ballotId === null) {
+      delete round.favorites[playerId];
+    } else {
+      const entry = round.ballot.find((e) => e.id === ballotId);
+      if (!entry) fail('definitionNotFound');
+      if (entry.authorIds.includes(playerId)) fail('ownDefinition');
+      round.favorites[playerId] = ballotId;
+    }
+    this.touch(now);
+    this.checkAutoAdvance(now);
+  }
+
   // ---------------------------------------------------------------- reveal
 
   startReveal(now) {
@@ -735,6 +847,9 @@ export class Game {
       votes: round.votes,
       playerIds: participantIds,
       points: this.settings.points,
+      modifiers: round.modifiers,
+      catchupIds: round.catchupIds,
+      favorites: round.favorites,
     });
 
     const fakes = round.ballot
@@ -750,6 +865,7 @@ export class Game {
     const real = round.ballot.find((entry) => entry.isReal);
     steps.push({ type: 'real', ballotId: real.id });
     if (markedCorrect.length) steps.push({ type: 'bonus' });
+    if (round.modifiers.includes('favorite')) steps.push({ type: 'favorite' });
     round.revealSteps = steps;
     round.revealStep = 0;
     round.highlight = null;
@@ -799,6 +915,7 @@ export class Game {
     const round = this.round;
     const nameOf = (id) => this.players.get(id)?.name ?? '(entfernt)';
     const votesBy = round.result.votesByDefinition;
+    const favoriteVotes = round.result.favorite?.votesByDefinition ?? {};
     const ballotBySource = new Map(round.ballot.map((entry) => [entry.sourceId, entry]));
     const definitions = this.effectiveDefinitions().map((d) => {
       const entry = ballotBySource.get(d.id);
@@ -809,6 +926,7 @@ export class Game {
         authorIds: d.authorIds,
         voters: entry ? votesBy[entry.id].map(nameOf) : [],
         votes: entry ? votesBy[entry.id].length : 0,
+        favoriteVotes: entry ? (favoriteVotes[entry.id]?.length ?? 0) : 0,
         deleted: d.deleted,
         markedCorrect: d.markedCorrect,
       };
@@ -818,6 +936,7 @@ export class Game {
       term: round.word.term,
       article: round.word.article,
       realDefinition: round.word.definition,
+      modifiers: round.modifiers,
       definitions,
     };
   }
@@ -877,6 +996,7 @@ export class Game {
     this.usedTerms = new Set();
     this.history = [];
     this.lastScoreChanges = {};
+    this.nextRound = emptyNextRound();
     for (const player of this.players.values()) {
       player.score = 0;
       player.activeFromRound = 1;
@@ -913,6 +1033,7 @@ export class Game {
       playedTerms: [...this.playedTerms],
       history: this.history,
       lastScoreChanges: this.lastScoreChanges,
+      nextRound: this.nextRound,
     };
   }
 
@@ -926,7 +1047,8 @@ export class Game {
       blockedWords,
       now: data.createdAt,
     });
-    game.settings = { ...game.settings, ...data.settings };
+    game.settings = { ...game.settings, ...data.settings, points: { ...game.settings.points, ...data.settings.points } };
+    game.nextRound = { ...emptyNextRound(), ...data.nextRound };
     game.lastActivity = data.lastActivity;
     game.phase = data.phase;
     game.locked = data.locked;
@@ -938,6 +1060,10 @@ export class Game {
     game.hostEverConnected = data.hostEverConnected;
     game.roundNumber = data.roundNumber;
     game.round = data.round && {
+      modifiers: [],
+      wheel: false,
+      catchupIds: [],
+      favorites: {},
       ...data.round,
       submissions: new Map(data.round.submissions),
       drafts: new Map(data.round.drafts),

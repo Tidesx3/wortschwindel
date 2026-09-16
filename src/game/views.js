@@ -45,6 +45,7 @@ export function getStateFor(game, role, playerId, now) {
     progress: null,
     ballot: null,
     highlight: null,
+    modifiers: null,
     reveal: null,
     ranking: null,
     stats: null,
@@ -52,6 +53,7 @@ export function getStateFor(game, role, playerId, now) {
 
   if (round && phase !== LOBBY && phase !== GAME_OVER) {
     view.word = publicWord(game);
+    view.modifiers = { list: round.modifiers, wheel: round.wheel, roundNumber: round.number };
   }
 
   if (phase === WRITING) {
@@ -66,6 +68,7 @@ export function getStateFor(game, role, playerId, now) {
       total: round.ballot.length,
       presentedCount: round.presentedCount,
       votingOpen: round.votingOpen,
+      favoriteEnabled: round.modifiers.includes('favorite'),
     };
     view.highlight = round.highlight;
     const participants = game.roundParticipants();
@@ -166,11 +169,14 @@ function publicReveal(game) {
   const items = new Map();
   let realShown = false;
   let bonusShown = false;
+  let favoriteShown = false;
   let current = null;
+  const result = round.result;
   round.revealSteps.slice(0, round.revealStep).forEach((step, index) => {
-    if (step.type === 'bonus') {
-      bonusShown = true;
-      current = { type: 'bonus' };
+    if (step.type === 'bonus' || step.type === 'favorite') {
+      if (step.type === 'bonus') bonusShown = true;
+      else favoriteShown = true;
+      current = { type: step.type };
       return;
     }
     const entry = round.ballot.find((e) => e.id === step.ballotId);
@@ -179,7 +185,7 @@ function publicReveal(game) {
       item = { id: entry.id, number: entry.number, text: entry.text, order: items.size };
       items.set(entry.id, item);
     }
-    const voters = round.result.votesByDefinition[entry.id];
+    const voters = result.votesByDefinition[entry.id];
     if (step.type === 'text') {
       item.isReal = false;
     } else if (step.type === 'voters') {
@@ -187,13 +193,13 @@ function publicReveal(game) {
     } else if (step.type === 'authors') {
       item.authors = entry.authorIds.map((id) => ({
         name: nameOf(id),
-        points: voters.length * game.settings.points.perFooled,
+        points: result.entryPoints[entry.id]?.[id] ?? 0,
       }));
     } else if (step.type === 'real') {
       realShown = true;
       item.isReal = true;
       item.voters = voters.map(nameOf);
-      item.points = game.settings.points.correctVote;
+      item.voterPoints = voters.map((id) => result.players[id]?.correctPoints ?? 0);
     }
     if (index === round.revealStep - 1) current = { type: step.type, id: entry.id };
   });
@@ -205,12 +211,33 @@ function publicReveal(game) {
     items: [...items.values()],
     realShown,
     bonus: null,
+    favorite: null,
   };
   if (bonusShown) {
     reveal.bonus = game
       .effectiveDefinitions()
       .filter((d) => !d.isReal && d.markedCorrect && !d.deleted)
-      .map((d) => ({ text: d.text, authors: d.authorIds.map(nameOf), points: game.settings.points.markedCorrect }));
+      .map((d) => ({
+        text: d.text,
+        authors: d.authorIds.map(nameOf),
+        points: Math.max(0, ...d.authorIds.map((id) => result.entryPoints[d.id]?.[id] ?? 0)),
+      }));
+  }
+  if (favoriteShown && result.favorite) {
+    reveal.favorite = {
+      votes: result.favorite.count,
+      winners: result.favorite.winnerIds.map((id) => {
+        const entry = round.ballot.find((e) => e.id === id);
+        return {
+          number: entry.number,
+          text: entry.text,
+          authors: entry.authorIds.map((authorId) => ({
+            name: nameOf(authorId),
+            points: result.players[authorId]?.favoritePoints ?? 0,
+          })),
+        };
+      }),
+    };
   }
   return reveal;
 }
@@ -232,6 +259,7 @@ function playerView(game, playerId, now) {
     waitingForNextRound: game.isInGame() && !participant,
   };
   if (!round || !participant) return you;
+  if (game.phase !== SCOREBOARD) you.catchup = round.catchupIds.includes(playerId);
 
   if (game.phase === WRITING) {
     const submission = round.submissions.get(playerId);
@@ -247,6 +275,7 @@ function playerView(game, playerId, now) {
     you.ownEntryId = own && own.number <= round.presentedCount ? own.id : null;
     you.hasEntry = Boolean(own);
     you.vote = round.votes[playerId] ?? null;
+    you.favorite = round.favorites[playerId] ?? null;
     you.canVote = game.canVote(playerId);
   }
   if (game.phase === REVEAL && game.revealDone()) {
@@ -259,6 +288,10 @@ function playerView(game, playerId, now) {
         fooledCount: result.fooledCount,
         markedCorrect: result.markedCorrect,
         hadEntry: round.ballot.some((entry) => entry.authorIds.includes(playerId)),
+        correctPoints: result.correctPoints,
+        fooledPoints: result.fooledPoints,
+        markedPoints: result.markedPoints,
+        favoritePoints: result.favoritePoints,
       };
     }
   }
@@ -288,7 +321,26 @@ function hostView(game, now) {
     moderationWarning: null,
     ballot: null,
     revealNext: null,
+    nextRound: null,
   };
+  if (game.canPrepareRound()) {
+    const candidate = game.nextCandidate();
+    host.nextRound = {
+      modifiers: game.nextRound.modifiers,
+      wheel: game.nextRound.wheel,
+      word: candidate && {
+        term: candidate.term,
+        article: candidate.article ?? null,
+        category: candidate.category ?? null,
+        definition: candidate.definition,
+      },
+      availableTerms: game
+        .availableWords()
+        .map((word) => word.term)
+        .sort((a, b) => a.localeCompare(b, 'de')),
+      roundNumber: game.roundNumber + 1,
+    };
+  }
   if (!round) return host;
   host.realDefinition = round.word.definition;
   host.term = round.word.term;
@@ -323,6 +375,7 @@ function hostView(game, now) {
       voters: Object.entries(round.votes)
         .filter(([, ballotId]) => ballotId === entry.id)
         .map(([voterId]) => nameOf(voterId)),
+      favorites: Object.values(round.favorites).filter((ballotId) => ballotId === entry.id).length,
     }));
   }
   if (game.phase === REVEAL) {

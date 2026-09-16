@@ -305,8 +305,13 @@
   border-radius: 50%;
   background: var(--success);
   color: #fff;
-  font-weight: 900;
   animation: pop-in 250ms ease;
+}
+
+.check-icon {
+  display: block;
+  width: 70%;
+  height: 70%;
 }
 
 .vote-status {
@@ -332,6 +337,33 @@
   margin: 0;
   font-size: 1.15rem;
   font-weight: 700;
+  animation: phase-in 450ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.result-card > :nth-child(2) {
+  animation-delay: 250ms;
+}
+
+.result-card > :nth-child(3) {
+  animation-delay: 450ms;
+}
+
+.result-card > :nth-child(4) {
+  animation-delay: 650ms;
+}
+
+.result-card > :nth-child(5) {
+  animation-delay: 850ms;
+}
+
+.vote-card.selected {
+  animation: selected-pop 300ms ease;
+}
+
+@keyframes selected-pop {
+  50% {
+    transform: scale(1.02);
+  }
 }
 
 .result-line.good {
@@ -381,4 +413,83 @@
 
 .timer-bar {
   padding: 0 0.2rem;
+}
+
+/* ---------------------------------------------------------------- modifiers & favourite */
+
+.p-modifiers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.p-modifier-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.p-modifier {
+  padding: 0.2em 0.7em;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), #c026d3);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+  animation: pop-in 400ms ease both;
+}
+
+.vote-item {
+  position: relative;
+}
+
+.vote-item.has-favorite .vote-card {
+  padding-right: 3.8rem;
+}
+
+.favorite-button {
+  position: absolute;
+  top: 50%;
+  right: 0.6rem;
+  transform: translateY(-50%);
+  width: 48px;
+  height: 48px;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  color: var(--gold);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 150ms ease, background var(--transition), border-color var(--transition);
+}
+
+.favorite-button.active {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: #fff;
+  animation: star-pop 450ms ease;
+}
+
+.favorite-button:disabled {
+  opacity: 0.5;
+}
+
+@keyframes star-pop {
+  0% {
+    transform: translateY(-50%) scale(0.6) rotate(-30deg);
+  }
+  60% {
+    transform: translateY(-50%) scale(1.25) rotate(10deg);
+  }
+  100% {
+    transform: translateY(-50%) scale(1) rotate(0);
+  }
+}
+
+.vote-item.has-favorite .vote-check {
+  display: none;
 }

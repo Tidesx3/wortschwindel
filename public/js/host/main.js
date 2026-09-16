@@ -310,6 +310,19 @@ function nextLabel(view) {
   }
 }
 
+/** Active modifiers during a round, planned ones while preparing the next round. */
+function modifierChips(view) {
+  const prep = view.host.nextRound;
+  const planned = prep && (view.phase === 'LOBBY' || view.phase === 'SCOREBOARD');
+  const ids = planned ? (prep.wheel ? ['wheel'] : prep.modifiers) : view.phase === 'SCOREBOARD' ? [] : view.modifiers?.list ?? [];
+  if (!ids.length) return null;
+  return h(
+    'span',
+    { class: ['cb-modifiers', planned && 'planned'], title: planned ? t.host.tabs.prep : '' },
+    ids.map((id) => h('span', { class: 'chip small', title: t.modifiers[id]?.desc }, t.modifiers[id]?.icon, ' ', t.modifiers[id]?.name)),
+  );
+}
+
 function button(label, onclick, { cls = '', title = null, pressed = null, disabled = false } = {}) {
   return h(
     'button',
@@ -355,6 +368,7 @@ function renderControls(view) {
       h('span', { class: 'cb-code', title: 'Raumcode' }, view.code),
       h('span', { class: 'chip' }, H.phase[view.phase]),
       view.roundNumber > 0 && view.phase !== 'LOBBY' && h('span', { class: 'cb-round' }, t.common.round(view.roundNumber, view.totalRounds)),
+      modifierChips(view),
       connection.dot,
     ),
     h(

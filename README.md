@@ -39,6 +39,24 @@ Die Punktwerte lassen sich im Steuerpult ändern.
 - Die Timer lassen sich auf 0 (= ohne Zeitlimit) stellen oder so einstellen, dass sie beim Ablauf nicht automatisch weiterschalten.
 - **Zeit erst während der Runde festlegen:** Starte ohne Zeitlimit und setze mit „⏱ Zeit setzen“ (Taste `T`) erst dann einen Countdown, wenn die meisten fertig sind, z. B. „noch 30 Sekunden“. Das geht beim Schreiben und bei der offenen Abstimmung. Ein laufender Timer lässt sich damit ersetzen oder wieder entfernen. „+30 s“ startet einen Timer, falls noch keiner läuft.
 
+### Rundenvorbereitung und Modifikatoren
+
+Im Steuerpult unter **🎛 Nächste Runde** bereitest du die kommende Runde vor:
+- **Wort festlegen:** „🎲 Wort ziehen“ schlägt ein zufälliges unbenutztes Wort vor, alternativ wählst du eins aus der Liste. Ohne Auswahl wird beim Start zufällig gezogen. Die Definition bleibt verschwommen, bis du „👁 Antworten anzeigen“ drückst (Vorsicht beim Spiegeln).
+- **Modifikatoren** gelten nur für diese eine Runde und lassen sich kombinieren. Beamer und Handys blenden sie zum Rundenstart ein.
+
+| Modifikator | Wirkung |
+|---|---|
+| ⚡ Doppelte Punkte | Alle Punkte der Runde zählen doppelt. |
+| 🔍 Wahrheitsbonus | Punkte für das Finden der echten Definition zählen doppelt. |
+| 🎭 Meisterschwindler | Jede Stimme für eine erfundene Definition zählt doppelt. |
+| ⭐ Publikumsliebling | Alle wählen zusätzlich die lustigste erfundene Antwort; die meistgewählte bekommt Bonuspunkte (Standard: 2, bei Gleichstand alle). |
+| 🚀 Aufholjagd | Wer unter dem Median der Punktestände liegt, bekommt doppelte Punkte. Liegt wegen Gleichstands niemand darunter, gilt das für alle hinter der Spitze. In der ersten Runde (alle 0 Punkte) wirkt sie noch nicht. Betroffene sehen einen Hinweis auf dem Handy. |
+| ⏱️ Blitzrunde | Nur 30 Sekunden Schreibzeit. |
+| 🎡 Glücksrad | Lost beim Rundenstart einen der Modifikatoren aus; der Beamer zeigt dazu eine Walze. |
+
+Die Modifikatoren jeder Runde stehen auch im CSV-Export.
+
 **Einheitliche Antworten:** Alle Antworten und auch die echte Definition werden gleich formatiert, damit der Stil nichts verrät:
 - Leerzeichen werden bereinigt und der erste Buchstabe groß geschrieben.
 - Anführungszeichen werden entfernt, und am Ende steht immer genau ein Punkt.

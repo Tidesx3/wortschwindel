@@ -121,7 +121,18 @@ test('reveal uncovers information step by step', () => {
   assert.equal(real.text, game.round.word.definition);
   assert.equal(real.voters.length, 2);
   const result = getStateFor(game, 'player', ids[1], 0).you.roundResult;
-  assert.deepEqual(result, { total: 3, votedReal: true, voted: true, fooledCount: 1, markedCorrect: false, hadEntry: true });
+  assert.deepEqual(result, {
+    total: 3,
+    votedReal: true,
+    voted: true,
+    fooledCount: 1,
+    markedCorrect: false,
+    hadEntry: true,
+    correctPoints: 2,
+    fooledPoints: 1,
+    markedPoints: 0,
+    favoritePoints: 0,
+  });
 });
 
 test('host view contains moderation data, screen view does not', () => {

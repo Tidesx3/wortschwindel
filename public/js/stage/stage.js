@@ -1,4 +1,4 @@
-import { add, h, replace, flip, rectsByKey, prefersReducedMotion } from '../lib/dom.js';
+import { add, h, replace, flip, rectsByKey, prefersReducedMotion, svg } from '../lib/dom.js';
 import { createTimer } from '../lib/timer.js';
 import { sound } from '../lib/sound.js';
 import { confetti } from '../lib/confetti.js';
@@ -27,10 +27,14 @@ export function createStage(root, { serverNow }) {
   root.classList.add('stage');
   const hostAway = h('div', { class: 'stage-host-away', hidden: true }, h('div', { class: 'spinner' }), S.hostAway);
   const content = h('div', { class: 'stage-content' });
-  replace(root, content, hostAway);
+  replace(root, ambientLayer(), content, hostAway);
+  const announcer = createAnnouncer(root);
+  let announcedRound = null;
+  watchSize(root);
 
   function update(view) {
     timer.update(view.timer);
+    root.dataset.phase = view.phase;
     hostAway.hidden = view.role !== 'screen' || view.hostConnected || view.phase === 'LOBBY';
 
     const key = renderKey(view);
@@ -38,6 +42,8 @@ export function createStage(root, { serverNow }) {
     lastKey = key;
 
     const phaseChanged = view.phase !== lastPhase;
+    // A new game starts in the lobby: forget which elements were already animated.
+    if (phaseChanged && view.phase === 'LOBBY' && lastPhase) seen.clear();
     playSounds(view, phaseChanged);
     const renderer = RENDERERS[view.phase];
     const previousRects = view.phase === 'SCOREBOARD' || view.phase === 'LOBBY' ? rectsByKey(content.querySelector('.flip-list')) : new Map();
@@ -47,14 +53,29 @@ export function createStage(root, { serverNow }) {
     if (view.phase === 'SCOREBOARD' && phaseChanged) animateScoreboard(next, view);
     else if (previousRects.size) flip(next.querySelector('.flip-list'), previousRects);
     for (const el of next.querySelectorAll('.fit')) fitToBox(el);
+    const progress = next.querySelector('.progress-text');
+    if (progress && !phaseChanged && lastView?.progress?.done !== view.progress?.done) progress.classList.add('bump');
     if (view.phase === 'GAME_OVER' && phaseChanged) {
-      confetti({ duration: 6000 });
+      // Burst when the winner appears on the podium.
+      setTimeout(() => confetti({ duration: 6000 }), prefersReducedMotion() ? 0 : 3000);
     }
+    // Announce modifiers once per round – not when a screen joins mid-round.
+    const roundKey = view.modifiers ? `${view.code}:${view.modifiers.roundNumber}` : null;
+    if (roundKey && roundKey !== announcedRound) {
+      if (lastView && view.phase === 'WRITING' && view.modifiers.list.length) announcer.show(view.modifiers);
+      announcedRound = roundKey;
+    }
+    if (view.phase !== 'WRITING' && phaseChanged) announcer.hide();
     lastPhase = view.phase;
     lastView = view;
   }
 
   function playSounds(view, phaseChanged) {
+    // A screen that (re)loads mid-game should not replay the current effect.
+    if (!lastView) {
+      lastRevealStep = view.reveal?.step ?? null;
+      return;
+    }
     if (phaseChanged) {
       if (view.phase === 'WRITING') sound.gong();
       if (view.phase === 'MODERATION' || view.phase === 'VOTING') sound.whoosh();
@@ -75,7 +96,8 @@ export function createStage(root, { serverNow }) {
         if (current.type === 'text') sound.whoosh();
         if (current.type === 'voters') (item?.voters?.length ? sound.fooled() : sound.pop());
         if (current.type === 'authors') sound.pop();
-        if (current.type === 'real' || current.type === 'bonus') sound.reveal();
+        if (current.type === 'real' || current.type === 'bonus' || current.type === 'favorite') sound.reveal();
+        if (current.type === 'real' || current.type === 'favorite') setTimeout(() => confetti({ count: 90, duration: 2600 }), 350);
       }
       lastRevealStep = step;
     } else {
@@ -88,19 +110,51 @@ export function createStage(root, { serverNow }) {
 
 /** Shrinks the element's font (via --fit) until its content fits without scrolling. */
 function fitToBox(el) {
+  // Measure without running entrance animations (their transforms count as overflow).
+  el.classList.add('measuring');
   let scale = 1;
   el.style.setProperty('--fit', '1');
-  while (scale > 0.45 && (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1)) {
+  while (scale > 0.45 && el.scrollHeight > el.clientHeight + 1) {
     scale -= 0.05;
     el.style.setProperty('--fit', scale.toFixed(2));
   }
+  el.classList.remove('measuring');
 }
 
-let resizeTimer = null;
-window.addEventListener('resize', () => {
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => document.querySelectorAll('.stage .fit').forEach(fitToBox), 150);
-});
+/** Re-fits text whenever the stage itself changes size (window, side panel, console reveal). */
+function watchSize(root) {
+  let frame = null;
+  const refit = () => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => root.querySelectorAll('.fit').forEach(fitToBox));
+  };
+  if (typeof ResizeObserver === 'function') new ResizeObserver(refit).observe(root);
+  else window.addEventListener('resize', refit);
+}
+
+/** Slowly drifting letters behind the lobby / waiting screens (persistent, never re-rendered). */
+function ambientLayer() {
+  const letters = 'AÄBßWÖ?ZüK!eQxß'.split('');
+  return h(
+    'div',
+    { class: 'ambient', 'aria-hidden': 'true' },
+    letters.map((letter, i) =>
+      h(
+        'span',
+        {
+          class: 'ambient-letter',
+          style: {
+            '--x': `${(i * 37) % 100}%`,
+            '--size': String(4 + ((i * 7) % 6)),
+            '--duration': `${18 + ((i * 5) % 14)}s`,
+            '--delay': `${-((i * 3.7) % 30)}s`,
+          },
+        },
+        letter,
+      ),
+    ),
+  );
+}
 
 function renderKey(view) {
   const { serverNow, timer, host, version, join, ...rest } = view;
@@ -115,21 +169,44 @@ function header(view, extra = null) {
     { class: 'stage-header' },
     h('span', { class: 'stage-brand' }, t.appName),
     view.roundNumber > 0 && view.phase !== 'LOBBY' && h('span', { class: 'stage-round' }, t.common.round(view.roundNumber, view.totalRounds)),
+    view.phase !== 'SCOREBOARD' && modifierBadges(view.modifiers),
     extra,
     h('span', { class: 'stage-code' }, view.code),
   );
 }
 
-function wordBlock(view, { compact = false } = {}) {
+function wordBlock(view, { compact = false, seen = null } = {}) {
   const word = view.word;
   if (!word) return null;
   const meta = S.wordClass(word.article, word.wordClass);
+  // The big term drops in letter by letter the first time it is shown.
+  const key = `word:${view.roundNumber}:${word.term}`;
+  const animate = seen && !seen.has(key) && !prefersReducedMotion();
+  if (seen) seen.add(key);
+  const term = animate && [...word.term].length > 16
+    ? h('span', { class: 'word-letters bounce-in' }, word.term)
+    : animate
+    ? h(
+        'span',
+        { class: 'word-letters', 'aria-hidden': 'true' },
+        [...word.term].map((char, i) => h('span', { class: 'word-letter', style: { '--i': String(i) } }, char)),
+      )
+    : word.term;
   return h(
     'div',
-    { class: ['word', compact && 'word-compact'] },
-    h('div', { class: 'word-term', lang: 'de' }, word.term),
+    { class: ['word', compact && 'word-compact', animate && 'word-enter'] },
+    h('div', { class: 'word-term', lang: 'de', 'aria-label': word.term }, term),
     (meta || word.category) &&
       h('div', { class: 'word-meta' }, meta && h('span', {}, meta), word.category && h('span', { class: 'chip chip-accent' }, word.category)),
+  );
+}
+
+/** Geometric check mark: font glyphs sit off-centre inside small circles. */
+function checkIcon() {
+  return svg(
+    'svg',
+    { viewBox: '0 0 24 24', class: 'check-icon' },
+    svg('path', { d: 'M5.5 12.5l4.2 4.2L18.5 7.8', fill: 'none', stroke: 'currentColor', 'stroke-width': 3.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }),
   );
 }
 
@@ -146,13 +223,17 @@ function playerChips(view, seen, { status } = {}) {
   for (const player of view.players) {
     if (status && !player.active) continue;
     const done = status === 'submitted' ? player.submitted : status === 'voted' ? player.voted : false;
+    // Only the chip that just turned green animates, not all of them on every update.
+    const doneKey = `done:${view.phase}:${view.roundNumber}:${view.word?.term}:${player.id}`;
+    const justDone = done && !seen.has(doneKey);
+    if (done) seen.add(doneKey);
     const chip = h(
       'li',
       {
-        class: ['player-chip', done && 'done', !player.connected && 'offline', player.away && 'away'],
+        class: ['player-chip', done && 'done', justDone && 'just-done', !player.connected && 'offline', player.away && 'away'],
         dataset: { key: player.id },
       },
-      status && h('span', { class: 'player-check', 'aria-hidden': 'true' }, done ? '✓' : ''),
+      status && h('span', { class: 'player-check', 'aria-hidden': 'true' }, done && checkIcon()),
       h('span', { class: 'player-name' }, player.name),
       !status && player.members && h('span', { class: 'player-members' }, player.members),
     );
@@ -195,7 +276,7 @@ const RENDERERS = {
   WRITING(el, view, { timer, seen }) {
     add(el, 
       header(view),
-      h('div', { class: 'writing-main' }, wordBlock(view), h('div', { class: 'stage-timer' }, timer.el)),
+      h('div', { class: 'writing-main' }, wordBlock(view, { seen }), h('div', { class: 'stage-timer' }, timer.el)),
       h(
         'section',
         { class: 'writing-status' },
@@ -226,15 +307,17 @@ const RENDERERS = {
       class: ['ballot', 'fit', total > 6 && 'ballot-two-cols', total > 10 && 'ballot-dense'],
       style: { '--count': String(total) },
     });
-    for (const entry of ballot.entries) {
+    const fresh = ballot.entries.filter((entry) => !seen.has(`ballot:${entry.id}`)).length;
+    ballot.entries.forEach((entry, index) => {
       const item = h(
         'li',
-        { class: ['ballot-entry', view.highlight === entry.number && 'highlight'] },
+        { class: ['ballot-entry', view.highlight === entry.number && 'highlight'], style: { '--i': String(index) } },
         h('span', { class: 'ballot-number' }, entry.number),
         h('span', { class: 'ballot-text' }, entry.text),
       );
-      list.append(markNew(seen, `ballot:${entry.id}`, item));
-    }
+      // A single new entry is "dealt" like a card; many at once cascade in.
+      list.append(markNew(seen, `ballot:${entry.id}`, item, fresh === 1 ? 'deal' : 'appear'));
+    });
     if (presenting) {
       for (let n = ballot.entries.length + 1; n <= total; n++) {
         list.append(h('li', { class: 'ballot-entry placeholder' }, h('span', { class: 'ballot-number' }, n), h('span', { class: 'ballot-text' }, '…')));
@@ -250,7 +333,8 @@ const RENDERERS = {
       : h(
           'div',
           { class: 'voting-status' },
-          h('div', { class: 'voting-callout accent' }, S.voteNow),
+          markNew(seen, `callout:${view.roundNumber}:${view.word?.term}`, h('div', { class: 'voting-callout accent' }, S.voteNow), 'bounce-in'),
+          ballot.favoriteEnabled && h('div', { class: 'favorite-hint' }, S.favoriteHint),
           h('div', { class: 'stage-timer small' }, timer.el),
           view.progress && h('div', { class: 'progress-text' }, S.votedCount(view.progress.done, view.progress.total)),
         );
@@ -261,7 +345,7 @@ const RENDERERS = {
     const reveal = view.reveal;
     const current = reveal.current;
     const items = reveal.items;
-    const focusId = current && current.type !== 'bonus' ? current.id : null;
+    const focusId = current && current.id ? current.id : null;
     const focus = items.find((i) => i.id === focusId);
     const others = items.filter((i) => i.id !== focusId);
 
@@ -282,6 +366,8 @@ const RENDERERS = {
           ),
         ),
       );
+    } else if (current.type === 'favorite') {
+      main = favoriteReveal(reveal.favorite);
     } else {
       main = revealCard(focus, seen, true);
     }
@@ -294,16 +380,19 @@ const RENDERERS = {
       header(view),
       h('div', { class: 'reveal-top' }, wordBlock(view, { compact: true })),
       h('div', { class: 'reveal-main fit' }, main),
-      others.length > 0 && h('div', { class: 'reveal-history' }, others.map((item) => revealMini(item))),
+      // Bonus/favourite steps need the whole space; the history is hidden there.
+      others.length > 0 &&
+        !['bonus', 'favorite'].includes(current?.type) &&
+        h('div', { class: 'reveal-history' }, others.map((item) => markNew(seen, `mini:${item.id}`, revealMini(item)))),
       done,
     );
   },
 
-  SCOREBOARD(el, view) {
-    add(el, 
+  SCOREBOARD(el, view, { phaseChanged }) {
+    add(el,
       header(view),
       h('h1', { class: 'scoreboard-title' }, S.scoreboardTitle),
-      rankingList(view.ranking, { withDelta: true }),
+      rankingList(view.ranking, { withDelta: true, withMovement: view.roundNumber > 1, cascade: phaseChanged }),
     );
   },
 
@@ -318,6 +407,7 @@ const RENDERERS = {
         h(
           'div',
           { class: `podium-place place-${place}` },
+          place === 1 && h('div', { class: 'podium-crown', 'aria-hidden': 'true' }, '👑'),
           h(
             'div',
             { class: 'podium-names' },
@@ -335,7 +425,7 @@ const RENDERERS = {
       podium,
       h(
         'div',
-        { class: 'final-bottom' },
+        { class: ['final-bottom', !seen.has('gameover') && !prefersReducedMotion() && 'stagger'] },
         stats &&
           h(
             'div',
@@ -364,6 +454,133 @@ const RENDERERS = {
   },
 };
 
+function favoriteReveal(favorite) {
+  const box = h('div', { class: 'reveal-favorite' }, h('h2', { class: 'favorite-title' }, '⭐ ', S.favoriteTitle, ' ⭐'));
+  if (!favorite || !favorite.winners.length) {
+    add(box, h('p', { class: 'muted' }, S.favoriteNone));
+    return box;
+  }
+  const multi = favorite.winners.length > 1;
+  add(
+    box,
+    h(
+      'div',
+      { class: ['favorite-winners', multi && 'multi'] },
+      favorite.winners.map((winner, i) =>
+      h(
+        'div',
+        { class: 'reveal-card favorite-card', style: { animationDelay: `${200 + i * 150}ms` } },
+        h('div', { class: 'reveal-card-head' }, h('span', { class: 'ballot-number' }, winner.number), h('span', { class: 'chip chip-gold' }, S.favoriteVotes(favorite.votes))),
+        h('p', { class: 'reveal-text' }, winner.text),
+        h(
+          'div',
+          { class: 'reveal-authors' },
+          h('span', { class: 'reveal-label' }, S.writtenBy),
+          winner.authors.map((author) =>
+            h('span', { class: 'chip chip-accent author pop' }, author.name, h('span', { class: 'points-badge big' }, t.common.plus(author.points))),
+          ),
+        ),
+      ),
+      ),
+    ),
+  );
+  return box;
+}
+
+function modifierBadges(modifiers) {
+  if (!modifiers?.list?.length) return null;
+  return h(
+    'span',
+    { class: 'modifier-badges' },
+    modifiers.list.map((id) => {
+      const mod = t.modifiers[id];
+      return mod && h('span', { class: `modifier-badge mod-${id}`, title: mod.desc }, mod.icon, ' ', mod.name);
+    }),
+  );
+}
+
+/** Full-screen announcement of the round's modifiers; spins a reel for the wheel. */
+function createAnnouncer(root) {
+  const overlay = h('div', { class: 'announce', hidden: true, onclick: () => hide() });
+  root.append(overlay);
+  let timers = [];
+
+  function hide() {
+    timers.forEach(clearTimeout);
+    timers = [];
+    root.classList.remove('announcing');
+    overlay.classList.remove('visible');
+    timers.push(setTimeout(() => (overlay.hidden = true), 400));
+  }
+
+  function card(id, extra = '') {
+    const mod = t.modifiers[id];
+    return h(
+      'div',
+      { class: `announce-card mod-${id} ${extra}` },
+      h('div', { class: 'announce-icon' }, mod.icon),
+      h('div', { class: 'announce-name' }, mod.name),
+      h('div', { class: 'announce-desc' }, mod.desc),
+    );
+  }
+
+  function show(modifiers) {
+    timers.forEach(clearTimeout);
+    timers = [];
+    const reduced = prefersReducedMotion();
+    const cards = h('div', { class: 'announce-cards' });
+    const title = h('div', { class: 'announce-title' }, modifiers.wheel ? `${t.modifiers.wheel.icon} ${S.wheelTitle}` : S.modifierIntro);
+    replace(overlay, h('div', { class: 'announce-inner' }, title, cards));
+    // Keep the result secret in the header while the wheel spins.
+    root.classList.add('announcing');
+    overlay.hidden = false;
+    requestAnimationFrame(() => overlay.classList.add('visible'));
+
+    const HOLD_MS = 3800;
+    if (modifiers.wheel && !reduced) {
+      // Slot-machine reel: cycle quickly, slow down, land on the result.
+      // The overlay is hidden relative to the landing, so throttled timers cannot cut it short.
+      const ids = Object.keys(t.modifiers).filter((id) => id !== 'wheel');
+      const result = modifiers.list[0];
+      const reel = h('div', { class: 'announce-reel' });
+      cards.append(reel);
+      let step = 0;
+      const total = 22;
+      const stepDelay = (n) => 50 + n * n * 0.9;
+      const spin = () => {
+        const id = step >= total ? result : ids[(ids.indexOf(result) + step + 1) % ids.length];
+        const mod = t.modifiers[id];
+        replace(reel, h('span', { class: 'reel-item' }, mod.icon, ' ', mod.name));
+        if (step < total) {
+          sound.tick(false);
+          step += 1;
+          timers.push(setTimeout(spin, stepDelay(step)));
+        } else {
+          sound.reveal();
+          reel.classList.add('landed');
+          timers.push(
+            setTimeout(() => {
+              replace(cards, card(result, 'pop-big'));
+              timers.push(setTimeout(hide, HOLD_MS));
+            }, 700),
+          );
+        }
+      };
+      spin();
+    } else {
+      modifiers.list.forEach((id, i) => {
+        const el = card(id, 'pop-big');
+        el.style.animationDelay = `${i * 180}ms`;
+        cards.append(el);
+      });
+      sound.reveal();
+      timers.push(setTimeout(hide, HOLD_MS));
+    }
+  }
+
+  return { show, hide };
+}
+
 function statCard(icon, title, value, detail) {
   const long = (value ?? '').length > 30;
   return h(
@@ -379,12 +596,18 @@ function statCard(icon, title, value, detail) {
 function revealCard(item, seen, large) {
   if (!item) return null;
   const card = h('div', { class: ['reveal-card', item.isReal ? 'real' : 'fake', large && 'large'] });
+  const verdictKey = `verdict:${item.id}:${item.isReal}`;
+  const verdictIsNew = !seen.has(verdictKey);
+  markNew(seen, `card:${item.id}`, card, 'card-in');
+  if (verdictIsNew && !prefersReducedMotion()) card.classList.add(item.isReal ? 'spotlight-in' : 'shake');
+  // The real card keeps its glow after the first reveal.
+  if (item.isReal) card.classList.add('spotlight');
   card.append(
     h(
       'div',
       { class: 'reveal-card-head' },
       h('span', { class: 'ballot-number' }, item.number),
-      markNew(seen, `verdict:${item.id}:${item.isReal}`, h('span', { class: ['verdict', item.isReal ? 'verdict-real' : 'verdict-fake'] }, item.isReal ? S.real : S.invented), item.isReal ? 'celebrate' : 'stamp'),
+      markNew(seen, verdictKey, h('span', { class: ['verdict', item.isReal ? 'verdict-real' : 'verdict-fake'] }, item.isReal ? S.real : S.invented), item.isReal ? 'celebrate' : 'stamp'),
     ),
     h('p', { class: 'reveal-text' }, item.text),
   );
@@ -395,7 +618,13 @@ function revealCard(item, seen, large) {
       h('span', { class: 'reveal-label' }, item.isReal ? S.votedByReal : S.votedBy),
       item.voters.length
         ? item.voters.map((name, i) => {
-            const chip = h('span', { class: 'chip voter', style: { animationDelay: `${i * 120}ms` } }, name, item.isReal && h('span', { class: 'points-badge' }, t.common.plus(item.points)));
+            const points = item.voterPoints?.[i];
+            const chip = h(
+              'span',
+              { class: ['chip voter', item.isReal ? 'voter-right' : 'voter-fooled'], style: { animationDelay: `${i * 120}ms` } },
+              name,
+              item.isReal && points != null && h('span', { class: 'points-badge' }, t.common.plus(points)),
+            );
             return markNew(seen, `voter:${item.id}:${name}`, chip, 'pop');
           })
         : h('span', { class: 'muted' }, S.noVotes),
@@ -412,7 +641,7 @@ function revealCard(item, seen, large) {
           markNew(
             seen,
             `author:${item.id}:${author.name}`,
-            h('span', { class: 'chip chip-accent author' }, author.name, h('span', { class: 'points-badge big' }, t.common.plus(author.points))),
+            h('span', { class: 'chip chip-accent author' }, author.name, h('span', { class: ['points-badge big', author.points === 0 && 'zero'] }, t.common.plus(author.points))),
             'pop',
           ),
         ),
@@ -433,14 +662,18 @@ function revealMini(item) {
   );
 }
 
-function rankingList(ranking, { withDelta = false, withMembers = false } = {}) {
-  const list = h('ol', { class: ['ranking', 'fit', 'flip-list', ranking.length > 10 && 'ranking-two-cols'] });
-  for (const row of ranking) {
-    const movement = withDelta && row.previousRank ? row.previousRank - row.rank : 0;
+function rankingList(ranking, { withDelta = false, withMovement = false, withMembers = false, cascade = false } = {}) {
+  const list = h('ol', { class: ['ranking', 'fit', 'flip-list', ranking.length > 10 && 'ranking-two-cols', cascade && !prefersReducedMotion() && 'cascade'] });
+  for (const [index, row] of ranking.entries()) {
+    const movement = withMovement && row.previousRank ? row.previousRank - row.rank : 0;
     list.append(
       h(
         'li',
-        { class: ['ranking-row', row.rank <= 3 && `top-${row.rank}`], dataset: { key: row.id, delta: row.delta, score: row.score } },
+        {
+          class: ['ranking-row', row.rank <= 3 && `top-${row.rank}`],
+          dataset: { key: row.id, delta: row.delta, score: row.score },
+          style: { '--i': String(index) },
+        },
         h('span', { class: 'ranking-rank' }, t.common.rank(row.rank)),
         h('span', { class: 'ranking-name' }, row.name, withMembers && row.members && h('small', {}, row.members)),
         withDelta && movement !== 0 && h('span', { class: ['ranking-move', movement > 0 ? 'up' : 'down'] }, movement > 0 ? `▲${movement}` : `▼${-movement}`),
@@ -476,7 +709,11 @@ function animateScoreboard(container, view) {
       const score = row.querySelector('.ranking-score');
       score.textContent = row.dataset.score;
       if (Number(row.dataset.delta)) score.classList.add('bump');
-      row.querySelector('.points-badge')?.classList.remove('waiting');
+      const badge = row.querySelector('.points-badge');
+      badge?.classList.remove('waiting');
+      badge?.classList.add('points-new');
+      // The cascade is over; plain rows keep the FLIP transform working.
+      row.style.animation = 'none';
     }
     flip(list, rects);
   }, 1200);

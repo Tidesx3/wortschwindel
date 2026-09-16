@@ -17,29 +17,43 @@ export function confetti({ duration = 4000, count = 180 } = {}) {
   resize();
   window.addEventListener('resize', resize);
 
-  const pieces = Array.from({ length: count }, () => ({
-    x: Math.random() * canvas.width,
-    y: -Math.random() * canvas.height * 0.5,
-    w: (6 + Math.random() * 8) * dpr,
-    h: (8 + Math.random() * 10) * dpr,
-    vx: (Math.random() - 0.5) * 3 * dpr,
-    vy: (2 + Math.random() * 4) * dpr,
-    rotation: Math.random() * Math.PI,
-    spin: (Math.random() - 0.5) * 0.3,
-    color: COLORS[Math.floor(Math.random() * COLORS.length)],
-  }));
+  const launch = (p, spread) =>
+    Object.assign(p, {
+      x: Math.random() * canvas.width,
+      y: -p.h - Math.random() * canvas.height * spread,
+      vx: (Math.random() - 0.5) * 3 * dpr,
+      vy: (2 + Math.random() * 4) * dpr,
+    });
+  const pieces = Array.from({ length: count }, () =>
+    launch(
+      {
+        w: (6 + Math.random() * 8) * dpr,
+        h: (8 + Math.random() * 10) * dpr,
+        rotation: Math.random() * Math.PI,
+        spin: (Math.random() - 0.5) * 0.3,
+        color: COLORS[Math.floor(Math.random() * COLORS.length)],
+      },
+      0.5,
+    ),
+  );
 
   const start = performance.now();
+  let last = start;
   function frame(now) {
     const elapsed = now - start;
+    // Motion is scaled to a 60 Hz frame so high-refresh screens don't empty the sky early.
+    const dt = Math.min(Math.max(now - last, 0), 50) / (1000 / 60);
+    last = now;
     context.clearRect(0, 0, canvas.width, canvas.height);
     const fade = Math.max(0, 1 - Math.max(0, elapsed - duration + 800) / 800);
     context.globalAlpha = fade;
     for (const p of pieces) {
-      p.x += p.vx;
-      p.y += p.vy;
-      p.vy += 0.05 * dpr;
-      p.rotation += p.spin;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 0.05 * dpr * dt;
+      p.rotation += p.spin * dt;
+      // Long bursts keep raining until shortly before the fade-out.
+      if (p.y > canvas.height + p.h && elapsed < duration - 2500) launch(p, 0.2);
       context.save();
       context.translate(p.x, p.y);
       context.rotate(p.rotation);

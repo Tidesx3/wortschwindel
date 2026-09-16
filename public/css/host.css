@@ -461,3 +461,80 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------------------------------------------------------------- round preparation */
+
+.cb-modifiers {
+  display: inline-flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.cb-modifiers.planned .chip {
+  border: 1px dashed var(--accent);
+  background: transparent;
+}
+
+.modifier-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.4rem;
+}
+
+.modifier-grid.disabled {
+  opacity: 0.45;
+}
+
+.modifier-card {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition), transform 120ms ease;
+}
+
+.modifier-card:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.modifier-card:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.modifier-card:disabled {
+  cursor: not-allowed;
+}
+
+.modifier-card.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 4px 0 0 var(--accent);
+}
+
+.modifier-icon {
+  font-size: 1.6rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.modifier-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.modifier-text small {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.wheel-card.active {
+  background: linear-gradient(90deg, var(--accent-soft), var(--warning-soft));
+}
