@@ -1,0 +1,125 @@
+{
+  "title": "Fachbegriffe gemischt (Beispiel)",
+  "words": [
+    {
+      "term": "Apokope",
+      "article": "die",
+      "wordClass": "Substantiv",
+      "definition": "Wegfall eines Lauts oder einer Silbe am Ende eines Wortes.",
+      "category": "Sprachwissenschaft",
+      "difficulty": 2
+    },
+    {
+      "term": "Palimpsest",
+      "article": "das",
+      "wordClass": "Substantiv",
+      "definition": "Schriftstück, dessen ursprünglicher Text abgeschabt und neu beschrieben wurde.",
+      "category": "Geschichte",
+      "difficulty": 3
+    },
+    {
+      "term": "Färse",
+      "article": "die",
+      "wordClass": "Substantiv",
+      "definition": "Junges weibliches Rind, das noch kein Kalb zur Welt gebracht hat.",
+      "category": "Landwirtschaft",
+      "difficulty": 2
+    },
+    {
+      "term": "Fiale",
+      "article": "die",
+      "wordClass": "Substantiv",
+      "definition": "Schlankes, spitz zulaufendes Türmchen als Zierde an gotischen Bauwerken.",
+      "category": "Architektur",
+      "difficulty": 3
+    },
+    {
+      "term": "Pedell",
+      "article": "der",
+      "wordClass": "Substantiv",
+      "definition": "Veraltete Bezeichnung für den Hausmeister einer Schule oder Hochschule.",
+      "category": "Schule",
+      "difficulty": 2
+    },
+    {
+      "term": "Zenotaph",
+      "article": "das",
+      "wordClass": "Substantiv",
+      "definition": "Grabdenkmal für eine Person, deren Leichnam an einem anderen Ort liegt.",
+      "category": "Kultur",
+      "difficulty": 3
+    },
+    {
+      "term": "Anakoluth",
+      "article": "das",
+      "wordClass": "Substantiv",
+      "definition": "Satz, der grammatisch anders endet, als er begonnen wurde.",
+      "category": "Sprachwissenschaft",
+      "difficulty": 3
+    },
+    {
+      "term": "Tremolo",
+      "article": "das",
+      "wordClass": "Substantiv",
+      "definition": "Schnelle, vielfache Wiederholung eines Tons oder zweier Töne im Wechsel.",
+      "category": "Musik",
+      "difficulty": 1
+    },
+    {
+      "term": "Drumlin",
+      "article": "der",
+      "wordClass": "Substantiv",
+      "definition": "Länglicher, flacher Hügel, den ein Gletscher aus Geröll geformt hat.",
+      "category": "Geografie",
+      "difficulty": 3
+    },
+    {
+      "term": "Epizeuxis",
+      "article": "die",
+      "wordClass": "Substantiv",
+      "definition": "Stilmittel, bei dem ein Wort direkt hintereinander wiederholt wird.",
+      "category": "Literatur",
+      "difficulty": 3
+    },
+    {
+      "term": "Kumulonimbus",
+      "article": "der",
+      "wordClass": "Substantiv",
+      "definition": "Hoch aufgetürmte Wolke, aus der häufig Gewitter und Hagel entstehen.",
+      "category": "Wetter",
+      "difficulty": 2
+    },
+    {
+      "term": "Kakophonie",
+      "article": "die",
+      "wordClass": "Substantiv",
+      "definition": "Unangenehmes Durcheinander von misstönenden Klängen.",
+      "category": "Musik",
+      "difficulty": 1
+    },
+    {
+      "term": "Oxymoron",
+      "article": "das",
+      "wordClass": "Substantiv",
+      "definition": "Verbindung zweier Begriffe, die sich eigentlich widersprechen.",
+      "category": "Literatur",
+      "difficulty": 1
+    },
+    {
+      "term": "Mykorrhiza",
+      "article": "die",
+      "wordClass": "Substantiv",
+      "definition": "Lebensgemeinschaft zwischen Pilzen und den Wurzeln von Pflanzen.",
+      "category": "Biologie",
+      "difficulty": 3
+    },
+    {
+      "term": "Hypokorismus",
+      "article": "der",
+      "wordClass": "Substantiv",
+      "definition": "Verkleinerte oder liebevoll abgewandelte Form eines Namens.",
+      "category": "Sprachwissenschaft",
+      "difficulty": 3
+    }
+  ]
+}

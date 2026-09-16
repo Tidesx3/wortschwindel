@@ -1,0 +1,33 @@
+services:
+  wortschwindel:
+    build: .
+    image: wortschwindel:latest
+    container_name: wortschwindel
+    restart: unless-stopped
+    environment:
+      PORT: ${PORT:-3000}
+      HOST_PIN: ${HOST_PIN:?Bitte HOST_PIN in .env setzen}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      PERSIST: ${PERSIST:-false}
+      ROOM_TTL_HOURS: ${ROOM_TTL_HOURS:-3}
+    ports:
+      # Only reachable from the host itself; the Cloudflare Tunnel connects locally.
+      # Use "${PORT:-3000}:${PORT:-3000}" to expose it in the LAN as well.
+      - "127.0.0.1:${PORT:-3000}:${PORT:-3000}"
+    volumes:
+      # Word lists, name blocklist and (with PERSIST=true) state.json
+      - ./data:/app/data
+
+  # Optional: run the Cloudflare Tunnel as a container too.
+  # Create a tunnel in the Cloudflare dashboard, set CLOUDFLARE_TUNNEL_TOKEN in .env,
+  # point the public hostname to http://wortschwindel:3000 and uncomment:
+  #
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   container_name: wortschwindel-tunnel
+  #   restart: unless-stopped
+  #   command: tunnel --no-autoupdate run
+  #   environment:
+  #     TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+  #   depends_on:
+  #     - wortschwindel

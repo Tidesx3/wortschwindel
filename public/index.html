@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="de" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#6c3ce0" />
+    <meta name="description" content="Wortschwindel – das Lexikonspiel für die Klasse" />
+    <title>Wortschwindel</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/css/theme.css" />
+    <link rel="stylesheet" href="/css/player.css" />
+    <script src="/socket.io/socket.io.js" defer></script>
+    <script type="module" src="/js/player/main.js"></script>
+  </head>
+  <body class="player-page">
+    <header id="player-header" class="player-header" hidden></header>
+    <main id="app" class="player-main">
+      <div class="spinner" aria-label="Lädt"></div>
+    </main>
+    <noscript>Bitte aktiviere JavaScript, um mitzuspielen.</noscript>
+  </body>
+</html>

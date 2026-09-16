@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="de" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Wortschwindel – Spielleitung</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/css/theme.css" />
+    <link rel="stylesheet" href="/css/stage.css" />
+    <link rel="stylesheet" href="/css/host.css" />
+    <script src="/socket.io/socket.io.js" defer></script>
+    <script type="module" src="/js/host/main.js"></script>
+  </head>
+  <body class="host-page">
+    <div id="setup" class="host-setup">
+      <div class="spinner" aria-label="Lädt"></div>
+    </div>
+    <div id="console" class="host-console" hidden>
+      <header id="control-bar" class="control-bar"></header>
+      <div class="host-body">
+        <main id="stage" class="host-stage" aria-label="Präsentation"></main>
+        <aside id="panel" class="host-panel" aria-label="Steuerpult"></aside>
+      </div>
+    </div>
+  </body>
+</html>

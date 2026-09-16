@@ -1,0 +1,41 @@
+.screen-page {
+  overflow: hidden;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.screen-stage {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.screen-tools {
+  position: fixed;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  opacity: 0.15;
+  transition: opacity var(--transition);
+  z-index: 20;
+}
+
+.screen-tools:hover,
+.screen-tools:focus-within {
+  opacity: 1;
+}
+
+.screen-error {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  background: var(--bg);
+  font-size: 2rem;
+  font-weight: 700;
+  text-align: center;
+  z-index: 50;
+}

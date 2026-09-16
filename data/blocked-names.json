@@ -1,0 +1,19 @@
+{
+  "_comment": "Wörter, die in Spielernamen nicht vorkommen dürfen (Groß-/Kleinschreibung, Umlaute und einfache Zahlenersetzungen werden ignoriert). Liste nach Bedarf ergänzen.",
+  "words": [
+    "arschloch",
+    "wichser",
+    "hurensohn",
+    "fotze",
+    "schlampe",
+    "nutte",
+    "missgeburt",
+    "spast",
+    "hitler",
+    "nazi",
+    "fuck",
+    "bitch",
+    "admin",
+    "spielleitung"
+  ]
+}

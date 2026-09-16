@@ -1,0 +1,25 @@
+{
+  "name": "wortschwindel",
+  "version": "1.0.0",
+  "description": "Browser-Multiplayer-Lexikonspiel für den Deutschunterricht",
+  "private": true,
+  "type": "module",
+  "main": "server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test",
+    "bots": "node scripts/bots.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.1"
+  }
+}
