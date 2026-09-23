@@ -182,6 +182,29 @@ export function createPanel(root, { act, getView, onNext }) {
       prep.availableTerms.map((term) => h('option', { value: term, selected: word?.term === term }, term)),
     );
 
+    // The three suggestions, plus a word picked from the full list if it is none of them.
+    const shown = word && !prep.candidates.some((c) => c.term === word.term) ? [...prep.candidates, word] : prep.candidates;
+    const wordCards = shown.map((candidate) => {
+      const active = word?.term === candidate.term;
+      return h(
+        'button',
+        {
+          type: 'button',
+          class: ['word-card', active && 'active'],
+          'aria-pressed': String(active),
+          onclick: () => act('host:nextWord', active ? { action: 'random' } : { action: 'choose', term: candidate.term }),
+        },
+        h(
+          'span',
+          { class: 'word-card-head' },
+          h('strong', {}, [candidate.article, candidate.term].filter(Boolean).join(' ')),
+          candidate.category && h('span', { class: 'chip small' }, candidate.category),
+          candidate.difficulty && h('span', { class: 'chip small', title: P.difficulty(candidate.difficulty) }, '★'.repeat(candidate.difficulty)),
+        ),
+        h('small', {}, candidate.definition),
+      );
+    });
+
     add(
       container,
       h('h3', {}, P.title(prep.roundNumber)),
@@ -202,19 +225,12 @@ export function createPanel(root, { act, getView, onNext }) {
       h('h3', {}, P.wordTitle),
       secretToggle(),
       secretBox(
-        word
-          ? h(
-              'div',
-              { class: 'real-definition' },
-              h('strong', {}, [word.article, word.term].filter(Boolean).join(' ')),
-              word.category && h('span', { class: 'chip small', style: { marginLeft: '0.5em' } }, word.category),
-              h('div', {}, word.definition),
-            )
-          : h('p', { class: 'muted' }, P.wordRandom),
+        h('p', { class: 'muted small' }, word ? P.wordChosen : P.wordRandom),
+        h('div', { class: 'word-choices' }, wordCards),
         h(
           'div',
           { class: 'panel-row' },
-          h('button', { class: 'btn btn-small', type: 'button', onclick: () => act('host:nextWord', { action: 'draw' }) }, word ? P.redraw : P.draw),
+          h('button', { class: 'btn btn-small', type: 'button', disabled: !prep.availableTerms.length, onclick: () => act('host:nextWord', { action: 'draw' }) }, P.redraw),
           word && h('button', { class: 'btn btn-small btn-ghost', type: 'button', onclick: () => act('host:nextWord', { action: 'random' }) }, P.random),
         ),
         select,

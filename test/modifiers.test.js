@@ -90,7 +90,7 @@ test('next round preparation: modifiers, word preview and reset after the round 
   assert.equal(game.round.word.term, 'Pedell');
   assert.deepEqual(game.round.modifiers, ['double', 'blitz']);
   assert.equal(game.timer.endsAt, 31_000, 'blitz round: 30 s');
-  assert.deepEqual(game.nextRound, { modifiers: [], wheel: false, term: null });
+  assert.deepEqual(game.nextRound, { modifiers: [], wheel: false, term: null, candidates: [] });
   assertGameError(() => game.setNextRound({ modifiers: ['double'] }, 0), 'wrongPhase');
 });
 
@@ -102,17 +102,36 @@ test('skipping a word keeps the round modifiers', () => {
   assert.deepEqual(game.round.modifiers, ['bluffer']);
 });
 
-test('drawing a preview word gives a different unused word', () => {
+test('the host gets three distinct word suggestions and can redraw them', () => {
   const { game } = createGame();
-  game.drawNextWord(0);
-  const first = game.nextRound.term;
-  for (let i = 0; i < 10; i++) {
-    game.drawNextWord(0);
-    assert.notEqual(game.nextRound.term, first);
-    game.chooseNextWord(first, 0);
-  }
-  game.chooseNextWord(null, 0);
-  assert.equal(game.nextRound.term, null);
+  const first = game.nextRound.candidates;
+  assert.equal(first.length, 3);
+  assert.equal(new Set(first).size, 3);
+  game.chooseNextWord(first[0], 0);
+  game.redrawCandidates(0);
+  assert.equal(game.nextRound.term, null, 'redrawing drops the previous choice');
+  const unseen = WORDS.map((w) => w.term).find((term) => !first.includes(term));
+  assert.ok(game.nextRound.candidates.includes(unseen), 'words not suggested yet come first');
+  assert.equal(new Set(game.nextRound.candidates).size, 3);
+});
+
+test('suggestions follow the word pool and exclude used words', () => {
+  const { game, ids } = createGame({ settings: { rounds: 3 } });
+  game.updateSettings({ categories: ['Architektur', 'Schule'] }, 0);
+  assert.deepEqual([...game.nextRound.candidates].sort(), ['Fiale', 'Pedell']);
+  game.updateSettings({ categories: [] }, 0);
+  toModeration(game, ids, ['eins zwei', 'drei vier', null]);
+  assert.deepEqual(game.nextRound.candidates, [], 'no suggestions during a round');
+  game.startVoting(0);
+  while (game.phase !== 'SCOREBOARD') game.next(0);
+  assert.equal(game.nextRound.candidates.length, 3);
+  assert.ok(!game.nextRound.candidates.includes(game.round.word.term));
+});
+
+test('without a choice a random word is drawn at the start', () => {
+  const { game } = createGame();
+  game.startGame(0);
+  assert.ok(WORDS.some((w) => w.term === game.round.word.term));
 });
 
 test('an invalid planned word falls back to a random one', () => {
@@ -236,6 +255,8 @@ test('next-round word preview is only sent to the host', () => {
   assert.equal(host.word.term, 'Drumlin');
   assert.deepEqual(host.modifiers, ['double']);
   assert.equal(host.availableTerms.length, WORDS.length);
+  assert.equal(host.candidates.length, 3);
+  assert.ok(host.candidates.every((c) => c.definition));
 });
 
 test('preparation state survives serialisation', () => {
@@ -243,6 +264,7 @@ test('preparation state survives serialisation', () => {
   game.setNextRound({ modifiers: ['favorite'], wheel: true }, 0);
   game.chooseNextWord('Fiale', 0);
   const restored = Game.fromJSON(JSON.parse(JSON.stringify(game.toJSON())), { getWordlists: game.getWordlists });
-  assert.deepEqual(restored.nextRound, { modifiers: ['favorite'], wheel: true, term: 'Fiale' });
+  assert.deepEqual(restored.nextRound, { modifiers: ['favorite'], wheel: true, term: 'Fiale', candidates: game.nextRound.candidates });
+  assert.deepEqual([...restored.offeredTerms], [...game.offeredTerms]);
   assert.equal(restored.settings.points.favorite, 2);
 });

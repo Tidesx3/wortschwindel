@@ -538,3 +538,51 @@
 .wheel-card.active {
   background: linear-gradient(90deg, var(--accent-soft), var(--warning-soft));
 }
+
+.word-choices {
+  display: grid;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.word-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition), transform 120ms ease;
+}
+
+.word-card:hover {
+  border-color: var(--accent);
+}
+
+.word-card:active {
+  transform: scale(0.98);
+}
+
+.word-card.active {
+  border-color: var(--success);
+  background: var(--success-soft);
+  box-shadow: inset 4px 0 0 var(--success);
+}
+
+.word-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.word-card small {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}

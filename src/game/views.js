@@ -324,20 +324,22 @@ function hostView(game, now) {
     nextRound: null,
   };
   if (game.canPrepareRound()) {
-    const candidate = game.nextCandidate();
+    const available = game.availableWords();
+    const byTerm = new Map(available.map((word) => [word.term, word]));
+    const wordView = (word) =>
+      word && {
+        term: word.term,
+        article: word.article ?? null,
+        category: word.category ?? null,
+        difficulty: word.difficulty ?? null,
+        definition: word.definition,
+      };
     host.nextRound = {
       modifiers: game.nextRound.modifiers,
       wheel: game.nextRound.wheel,
-      word: candidate && {
-        term: candidate.term,
-        article: candidate.article ?? null,
-        category: candidate.category ?? null,
-        definition: candidate.definition,
-      },
-      availableTerms: game
-        .availableWords()
-        .map((word) => word.term)
-        .sort((a, b) => a.localeCompare(b, 'de')),
+      word: wordView(game.nextCandidate()),
+      candidates: game.nextRound.candidates.filter((term) => byTerm.has(term)).map((term) => wordView(byTerm.get(term))),
+      availableTerms: available.map((word) => word.term).sort((a, b) => a.localeCompare(b, 'de')),
       roundNumber: game.roundNumber + 1,
     };
   }

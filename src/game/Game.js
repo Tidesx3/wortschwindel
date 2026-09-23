@@ -16,8 +16,11 @@ function fail(code) {
   throw new GameError(code);
 }
 
+/** Number of word suggestions the host gets while preparing a round. */
+export const CANDIDATE_COUNT = 3;
+
 function emptyNextRound() {
-  return { modifiers: [], wheel: false, term: null };
+  return { modifiers: [], wheel: false, term: null, candidates: [] };
 }
 
 /**
@@ -61,10 +64,12 @@ export class Game {
     this.timer = null;
     this.usedTerms = new Set();
     this.playedTerms = new Set();
+    this.offeredTerms = new Set();
     this.history = [];
     this.lastScoreChanges = {};
     this.nextRound = emptyNextRound();
     this.version = 0;
+    this.refreshCandidates();
   }
 
   // ---------------------------------------------------------------- helpers
@@ -72,6 +77,8 @@ export class Game {
   touch(now) {
     this.lastActivity = now;
     this.version++;
+    // Keeps the host's word suggestions valid (new preparation phase, changed wordlist or filters).
+    this.refreshCandidates();
   }
 
   getPlayer(playerId) {
@@ -416,14 +423,38 @@ export class Game {
     return this.availableWords().find((word) => word.term === term) ?? null;
   }
 
-  /** Draws a (different) random word as preview for the next round. */
-  drawNextWord(now) {
+  /**
+   * Draws up to `count` distinct unused words, preferring words not suggested yet and not
+   * played in this room. Terms in `exclude` are only taken when nothing else is left.
+   */
+  drawCandidateTerms(count, exclude = new Set()) {
+    const rank = (term) =>
+      (exclude.has(term) ? 4 : 0) + (this.offeredTerms.has(term) ? 2 : 0) + (this.playedTerms.has(term) ? 1 : 0);
+    return shuffle(this.availableWords().map((word) => word.term), this.random)
+      .map((term) => ({ term, rank: rank(term) }))
+      .sort((a, b) => a.rank - b.rank)
+      .slice(0, count)
+      .map(({ term }) => term);
+  }
+
+  /** While preparing: drops suggestions that became unavailable and tops the list up. */
+  refreshCandidates() {
+    if (!this.canPrepareRound()) return;
+    const available = new Set(this.availableWords().map((word) => word.term));
+    const kept = this.nextRound.candidates.filter((term) => available.has(term));
+    const missing = Math.min(CANDIDATE_COUNT, available.size) - kept.length;
+    if (missing > 0) kept.push(...this.drawCandidateTerms(missing, new Set(kept)));
+    kept.forEach((term) => this.offeredTerms.add(term));
+    this.nextRound.candidates = kept;
+  }
+
+  /** Replaces all suggestions with new ones; a previous choice falls back to "random". */
+  redrawCandidates(now) {
     if (!this.canPrepareRound()) fail('wrongPhase');
-    const exclude = new Set(this.usedTerms);
-    if (this.nextRound.term && this.availableWords().length > 1) exclude.add(this.nextRound.term);
-    const word = pickWord(this.wordPool(), exclude, this.playedTerms, this.random);
-    if (!word) fail('noWordsLeft');
-    this.nextRound.term = word.term;
+    if (!this.availableWords().length) fail('noWordsLeft');
+    this.nextRound.candidates = this.drawCandidateTerms(CANDIDATE_COUNT, new Set(this.nextRound.candidates));
+    this.nextRound.candidates.forEach((term) => this.offeredTerms.add(term));
+    this.nextRound.term = null;
     this.touch(now);
   }
 
@@ -1031,6 +1062,7 @@ export class Game {
       timer: this.timer,
       usedTerms: [...this.usedTerms],
       playedTerms: [...this.playedTerms],
+      offeredTerms: [...this.offeredTerms],
       history: this.history,
       lastScoreChanges: this.lastScoreChanges,
       nextRound: this.nextRound,
@@ -1071,6 +1103,7 @@ export class Game {
     game.timer = data.timer;
     game.usedTerms = new Set(data.usedTerms);
     game.playedTerms = new Set(data.playedTerms);
+    game.offeredTerms = new Set(data.offeredTerms ?? []);
     game.history = data.history;
     game.lastScoreChanges = data.lastScoreChanges ?? {};
     // After a restart the host is gone: freeze any running timer until they return.
@@ -1081,6 +1114,7 @@ export class Game {
       game.timer.paused = true;
       game.timer.pauseReason = 'hostDisconnected';
     }
+    game.refreshCandidates();
     return game;
   }
 }

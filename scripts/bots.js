@@ -217,7 +217,8 @@ async function driveGame(host, bots) {
     if (plan.wheel) await act('host:setNextRound', { wheel: true });
     plannedTerm = null;
     if (plan.word) {
-      await act('host:nextWord', { action: 'draw' });
+      await waitFor((v) => v.host.nextRound?.candidates?.length, 'Wortvorschläge', 5000);
+      await act('host:nextWord', { action: 'choose', term: host.view.host.nextRound.candidates.at(-1).term });
       await waitFor((v) => v.host.nextRound?.word, 'Wortvorschau', 5000);
       plannedTerm = host.view.host.nextRound.word.term;
       log(`Host: Runde ${roundNumber} vorbereitet mit Wort „${plannedTerm}“`);

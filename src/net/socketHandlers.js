@@ -427,7 +427,7 @@ export function registerSocketHandlers({ io, rooms, hostTokens, config, getWordl
 
     host('host:nextWord', (payload, game, now) => {
       const action = v.oneOf(payload.action, ['draw', 'choose', 'random'], 'action');
-      if (action === 'draw') game.drawNextWord(now);
+      if (action === 'draw') game.redrawCandidates(now);
       if (action === 'choose') game.chooseNextWord(v.str(payload.term, { min: 1, max: 80, name: 'term' }), now);
       if (action === 'random') game.chooseNextWord(null, now);
     });
